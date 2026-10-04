@@ -150,7 +150,7 @@ def xhamster_public_sources(url: str) -> list[dict]:
     seen = set()
 
     for raw in raw_urls:
-        candidate = raw.rstrip("\\'\"",);")
+        candidate = raw.rstrip("\\")
         parsed = urlparse(candidate)
         if not parsed.hostname or not xhamster_media_host(parsed.hostname):
             continue
