@@ -74,13 +74,11 @@ def validate_format_id(format_id: str | None) -> str | None:
 def base_options() -> dict:
     return {
         "quiet": True,
-        "extractor_args": {"generic": {"impersonate": "chrome"}},
-        "impersonate": "chrome",
         "no_warnings": True,
         "noplaylist": True,
         "socket_timeout": 20,
-        "retries": 2,
-        "fragment_retries": 2,
+        "retries": 3,
+        "fragment_retries": 3,
         "max_filesize": MAX_FILE_SIZE,
     }
 
@@ -97,48 +95,54 @@ def is_x_url(url: str) -> bool:
     }
 
 
+def is_xhamster_url(url: str) -> bool:
+    hostname = (urlparse(url).hostname or "").lower().rstrip(".")
+    return hostname == "xhamster.com" or hostname.endswith(".xhamster.com")
+
+
 def x_url_candidates(url: str) -> list[str]:
     if not is_x_url(url):
         return [url]
 
     parsed = urlparse(url)
     path = parsed.path
-    query = parsed.query
-    canonical_query = f"?{query}" if query else ""
+    query = f"?{parsed.query}" if parsed.query else ""
     return [
-        f"https://x.com{path}{canonical_query}",
-        f"https://twitter.com{path}{canonical_query}",
+        f"https://x.com{path}{query}",
+        f"https://twitter.com{path}{query}",
     ]
 
 
-def extraction_options(url: str, api: str | None = None) -> dict:
-    options = base_options()
+def extraction_attempts(url: str) -> list[dict]:
+    base = base_options()
+
     if is_x_url(url):
-        options["extractor_args"] = {
-            **options["extractor_args"],
-            "twitter": {"api": api or "graphql"},
-        }
-        options.pop("impersonate", None)
-    return options
+        return [
+            {**base, "extractor_args": {"twitter": {"api": "graphql"}}},
+            {**base, "extractor_args": {"twitter": {"api": "syndication"}}},
+            {**base, "extractor_args": {"twitter": {"api": "legacy"}}},
+            {**base, "source_address": "0.0.0.0", "extractor_args": {"twitter": {"api": "graphql"}}},
+        ]
+
+    if is_xhamster_url(url):
+        return [
+            base,
+            {**base, "source_address": "0.0.0.0"},
+            {**base, "impersonate": "chrome"},
+            {**base, "source_address": "0.0.0.0", "impersonate": "chrome"},
+        ]
+
+    return [base]
 
 
-def extract_info_with_fallbacks(url: str, options: dict) -> dict:
-    candidates = x_url_candidates(url)
-    apis = ["graphql", "syndication", "legacy"] if is_x_url(url) else [None]
+def extract_info_with_fallbacks(url: str) -> dict:
     last_error: Exception | None = None
 
-    for candidate in candidates:
-        for api in apis:
-            attempt = dict(options)
-            if is_x_url(candidate):
-                attempt["extractor_args"] = {
-                    **attempt.get("extractor_args", {}),
-                    "twitter": {"api": api},
-                }
-                attempt.pop("impersonate", None)
-
+    for candidate in x_url_candidates(url):
+        for options in extraction_attempts(candidate):
             try:
-                with yt_dlp.YoutubeDL(attempt) as ydl:
+                options["skip_download"] = True
+                with yt_dlp.YoutubeDL(options) as ydl:
                     return ydl.extract_info(candidate, download=False)
             except Exception as exc:
                 last_error = exc
@@ -148,13 +152,31 @@ def extract_info_with_fallbacks(url: str, options: dict) -> dict:
     raise RuntimeError("Unable to extract media.")
 
 
+def download_with_fallbacks(url: str, options: dict) -> None:
+    last_error: Exception | None = None
+
+    for candidate in x_url_candidates(url):
+        for attempt in extraction_attempts(candidate):
+            attempt.update(options)
+            try:
+                with yt_dlp.YoutubeDL(attempt) as ydl:
+                    ydl.download([candidate])
+                    return
+            except Exception as exc:
+                last_error = exc
+
+    if last_error is not None:
+        raise last_error
+    raise RuntimeError("Unable to download media.")
+
+
 def extract(url: str) -> dict:
     validate_public_url(url)
     options = extraction_options(url)
     options["skip_download"] = True
 
     try:
-        info = extract_info_with_fallbacks(url, options)
+        info = extract_info_with_fallbacks(url)
     except Exception as exc:
         message = str(exc).strip().splitlines()[-1] if str(exc).strip() else "Unable to read this media URL."
         raise HTTPException(status_code=422, detail=message[:500])
@@ -223,7 +245,7 @@ def download_media(request: URLRequest, background_tasks: BackgroundTasks) -> Fi
     temp_dir = Path(tempfile.mkdtemp(prefix="video-downloader-"))
     output_template = str(temp_dir / "%(title).120s-%(id)s.%(ext)s")
 
-    options = extraction_options(request.url)
+    options = base_options()
     format_id = validate_format_id(request.format_id)
     options.update({
         "outtmpl": output_template,
@@ -235,32 +257,7 @@ def download_media(request: URLRequest, background_tasks: BackgroundTasks) -> Fi
     })
 
     try:
-        candidates = x_url_candidates(request.url)
-        apis = ["graphql", "syndication", "legacy"] if is_x_url(request.url) else [None]
-        downloaded = False
-        last_error = None
-
-        for candidate in candidates:
-            for api in apis:
-                attempt = dict(options)
-                if is_x_url(candidate):
-                    attempt["extractor_args"] = {
-                        **attempt.get("extractor_args", {}),
-                        "twitter": {"api": api},
-                    }
-                    attempt.pop("impersonate", None)
-                try:
-                    with yt_dlp.YoutubeDL(attempt) as ydl:
-                        ydl.download([candidate])
-                    downloaded = True
-                    break
-                except Exception as exc:
-                    last_error = exc
-            if downloaded:
-                break
-
-        if not downloaded and last_error is not None:
-            raise last_error
+        download_with_fallbacks(request.url, options)
     except Exception as exc:
         for child in temp_dir.iterdir():
             child.unlink(missing_ok=True)
@@ -297,7 +294,7 @@ def download_audio(request: URLRequest, background_tasks: BackgroundTasks) -> Fi
     temp_dir = Path(tempfile.mkdtemp(prefix="video-downloader-audio-"))
     output_template = str(temp_dir / "%(title).120s-%(id)s.%(ext)s")
 
-    options = extraction_options(request.url)
+    options = base_options()
     format_id = validate_format_id(request.format_id)
     options.update({
         "outtmpl": output_template,
@@ -312,32 +309,7 @@ def download_audio(request: URLRequest, background_tasks: BackgroundTasks) -> Fi
     })
 
     try:
-        candidates = x_url_candidates(request.url)
-        apis = ["graphql", "syndication", "legacy"] if is_x_url(request.url) else [None]
-        downloaded = False
-        last_error = None
-
-        for candidate in candidates:
-            for api in apis:
-                attempt = dict(options)
-                if is_x_url(candidate):
-                    attempt["extractor_args"] = {
-                        **attempt.get("extractor_args", {}),
-                        "twitter": {"api": api},
-                    }
-                    attempt.pop("impersonate", None)
-                try:
-                    with yt_dlp.YoutubeDL(attempt) as ydl:
-                        ydl.download([candidate])
-                    downloaded = True
-                    break
-                except Exception as exc:
-                    last_error = exc
-            if downloaded:
-                break
-
-        if not downloaded and last_error is not None:
-            raise last_error
+        download_with_fallbacks(request.url, options)
     except Exception as exc:
         for child in temp_dir.iterdir():
             child.unlink(missing_ok=True)
