@@ -2,6 +2,8 @@
 
 Browser-based video downloader demo.
 
-**Demo:** https://tezzaaaaaa.github.io/Video-Downloader/
+**Live demo:** https://yellowish-pointless-snake--tereroaafamasag.replit.app
 
 **Repository:** https://github.com/Tezzaaaaaa/Video-Downloader
+
+GitHub Pages deployment is also configured for the `main` branch.
