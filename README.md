@@ -39,3 +39,15 @@ Run: `docker run --rm -p 8000:8000 video-downloader`
 GitHub Pages can host the frontend but cannot execute the Python/yt-dlp/FFmpeg backend. Deploy the repository as a server/container on a host that can run Docker or Python, then serve Index.html through server.py.
 
 The downloader does not bypass DRM, private accounts, paywalls, login-only content or access restrictions. Use it only for media you are permitted to download.
+## Live architecture
+
+The GitHub Pages URL is the public frontend. GitHub Pages cannot execute Python, yt-dlp or FFmpeg, so the frontend is configured to call the deployed FastAPI backend instead.
+
+- Frontend: https://tezzaaaaaa.github.io/Video-Downloader/
+- Backend: https://yellowish-pointless-snake--tereroaafamasag.replit.app
+- Backend health check: `/health`
+- Metadata: `POST /api/info`
+- Video: `POST /api/download`
+- MP3: `POST /api/audio`
+
+The backend is responsible for yt-dlp extraction and FFmpeg processing. The frontend must not be expected to run those components from GitHub Pages.
