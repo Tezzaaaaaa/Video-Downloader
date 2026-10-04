@@ -1,9 +1,39 @@
-# KEFE Video Downloader
+# Video Downloader
 
-Browser-based video downloader demo.
+A NoAdsDL-style universal downloader powered by **yt-dlp** and **FFmpeg**.
 
-**Live demo:** https://yellowish-pointless-snake--tereroaafamasag.replit.app
+## How it works
 
-**Repository:** https://github.com/Tezzaaaaaa/Video-Downloader
+1. Paste a public media URL.
+2. The server extracts the title, thumbnail and available formats.
+3. Choose video or MP3.
+4. The server downloads and post-processes the media, then returns the file.
 
-GitHub Pages deployment is also configured for the `main` branch.
+Supported platforms depend on the current yt-dlp extractors, including YouTube, TikTok, Instagram, Facebook, X/Twitter, Reddit, Vimeo, SoundCloud and many others. yt-dlp notes that platform support can change and must be tested against the live site. citeturn0search7
+
+## Requirements
+
+- Python 3.10+
+- yt-dlp[default]
+- FFmpeg + FFprobe
+- A supported JavaScript runtime for full YouTube support; the included Dockerfile installs Deno. yt-dlp lists FFmpeg/FFprobe and yt-dlp-ejs plus a supported JS runtime among its recommended dependencies. citeturn0search1
+
+## Run locally
+
+1. Create a virtual environment: `python -m venv .venv`
+2. Activate it: `source .venv/bin/activate`
+3. Install dependencies: `pip install -r requirements.txt`
+4. Start the server: `python server.py`
+5. Open `http://localhost:8000`
+
+## Docker
+
+Build: `docker build -t video-downloader .`
+
+Run: `docker run --rm -p 8000:8000 video-downloader`
+
+## Important deployment note
+
+GitHub Pages can host the frontend but cannot execute the Python/yt-dlp/FFmpeg backend. Deploy the repository as a server/container on a host that can run Docker or Python, then serve Index.html through server.py.
+
+The downloader does not bypass DRM, private accounts, paywalls or login-only content. Use it only for media you are permitted to download.
