@@ -134,9 +134,9 @@ def xhamster_title_from_page(url: str) -> str:
         page = html.unescape(xhamster_fetch_page(url))
         match = re.search(r"<title[^>]*>(.*?)</title>", page, re.I | re.S)
         if match:
-            title = re.sub(r"\\s+", " ", match.group(1)).strip()
+            title = re.sub(r"\s+", " ", match.group(1)).strip()
             if title:
-                return re.sub(r"\\s*[|–-]\\s*xHamster.*$", "", title, flags=re.I).strip() or title
+                return re.sub(r"\s*[|–-]\s*xHamster.*$", "", title, flags=re.I).strip() or title
     except Exception:
         pass
     return "XHamster video"
@@ -144,7 +144,7 @@ def xhamster_title_from_page(url: str) -> str:
 
 def xhamster_public_sources(url: str) -> list[dict]:
     page = html.unescape(xhamster_fetch_page(url)).replace("\\/", "/")
-    raw_urls = re.findall(r"https?://[^\\"'<>\\s]+", page)
+    raw_urls = re.findall(r'''https?://[^"'<>\s]+''', page)
 
     sources = []
     seen = set()
@@ -163,7 +163,7 @@ def xhamster_public_sources(url: str) -> list[dict]:
             continue
         seen.add(candidate)
 
-        quality_match = re.search(r'(?<!\\d)(\\d{3,4})p?(?!\\d)', candidate, re.I)
+        quality_match = re.search(r"(?<!\d)(\d{3,4})p?(?!\d)", candidate, re.I)
         height = int(quality_match.group(1)) if quality_match else None
         is_hls = ".m3u8" in lowered
         sources.append({
