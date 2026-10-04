@@ -139,10 +139,10 @@ form.addEventListener("submit",async e=>{
   const bits=[data.extractor,data.uploader,data.duration?new Date(data.duration*1000).toISOString().slice(11,19):""].filter(Boolean);
   meta.textContent=bits.join(" · ");
   if(data.thumbnail){thumb.src=data.thumbnail;thumb.hidden=false}else{thumb.hidden=true}
-  const usable=(data.formats||[]).filter(f=>f.type==="video"||f.type==="audio").slice(0,40);
+  const usable=(data.formats||[]).filter(f=>f.type==="video"||f.type==="hls"||f.type==="audio").slice(0,40);
   usable.forEach(f=>{
    const b=document.createElement("button");b.className="format";
-   const label=f.type==="video"?(f.height?f.height+"p":"video"):"audio";
+   const label=f.type==="hls"?(f.height?f.height+"p stream":"HLS stream"):f.type==="video"?(f.height?f.height+"p":"video"):"audio";
    b.innerHTML="<strong>"+label+"</strong><small>"+[f.ext,f.hasAudio?"with audio":"video only",f.fps?f.fps+" fps":""].filter(Boolean).join(" · ")+"</small>";
    b.onclick=()=>download("/api/download",f.id);
    formatList.appendChild(b);
