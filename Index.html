@@ -93,17 +93,17 @@ form.addEventListener("submit",async e=>{
    const b=document.createElement("button");b.className="format";
    const label=f.type==="video"?(f.height?f.height+"p":"video"):"audio";
    b.innerHTML="<strong>"+label+"</strong><small>"+[f.ext,f.hasAudio?"with audio":"video only",f.fps?f.fps+" fps":""].filter(Boolean).join(" · ")+"</small>";
-   b.onclick=()=>download("/api/download");
+   b.onclick=()=>download("/api/download",f.id);
    formatList.appendChild(b);
   });
   formats.classList.toggle("show",usable.length>0);result.classList.add("show");setStatus("Source ready.","success");
  }catch(err){setStatus(err.message,"error")}finally{analyze.disabled=false}
 });
-async function download(path){
+async function download(path,formatId=null){
  if(!currentUrl)return;
  setStatus("Preparing download…");
  try{
-  const response=await fetch(path,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({url:currentUrl})});
+  const response=await fetch(path,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({url:currentUrl,...(formatId?{format_id:formatId}:{})})});
   if(!response.ok){let d={};try{d=await response.json()}catch{}throw new Error(d.detail||"Download failed.")}
   const blob=await response.blob(),name=(response.headers.get("Content-Disposition")||"").match(/filename="?([^"]+)"?/i)?.[1]||"download";
   const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),1000);
