@@ -120,10 +120,11 @@ footer{border-top:1px solid var(--line);padding:22px 0;color:var(--tertiary);fon
 
 <script>
 const form=document.getElementById("form"),url=document.getElementById("url"),status=document.getElementById("status"),result=document.getElementById("result"),title=document.getElementById("title"),meta=document.getElementById("meta"),thumb=document.getElementById("thumb"),formats=document.getElementById("formats"),formatList=document.getElementById("formatList"),analyze=document.getElementById("analyze");
+const API_BASE="https://yellowish-pointless-snake--tereroaafamasag.replit.app";
 let currentUrl="";
 function setStatus(message,type=""){status.textContent=message;status.className="status "+type}
 async function api(path,body){
- const response=await fetch(path,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+ const response=await fetch(API_BASE+path,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
  let data={};try{data=await response.json()}catch{}
  if(!response.ok)throw new Error(data.detail||"Request failed.");
  return data;
@@ -153,7 +154,7 @@ async function download(path,formatId=null){
  if(!currentUrl)return;
  setStatus("Preparing download…");
  try{
-  const response=await fetch(path,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({url:currentUrl,...(formatId?{format_id:formatId}:{})})});
+  const response=await fetch(API_BASE+path,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({url:currentUrl,...(formatId?{format_id:formatId}:{})})});
   if(!response.ok){let d={};try{d=await response.json()}catch{}throw new Error(d.detail||"Download failed.")}
   const blob=await response.blob(),name=(response.headers.get("Content-Disposition")||"").match(/filename="?([^"]+)"?/i)?.[1]||"download";
   const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),1000);
