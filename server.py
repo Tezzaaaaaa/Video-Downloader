@@ -172,9 +172,6 @@ def download_with_fallbacks(url: str, options: dict) -> None:
 
 def extract(url: str) -> dict:
     validate_public_url(url)
-    options = extraction_options(url)
-    options["skip_download"] = True
-
     try:
         info = extract_info_with_fallbacks(url)
     except Exception as exc:
