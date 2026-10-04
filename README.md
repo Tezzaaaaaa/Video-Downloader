@@ -9,14 +9,16 @@ A NoAdsDL-style universal downloader powered by **yt-dlp** and **FFmpeg**.
 3. Choose video or MP3.
 4. The server downloads and post-processes the media, then returns the file.
 
-Supported platforms depend on the current yt-dlp extractors, including YouTube, TikTok, Instagram, Facebook, X/Twitter, Reddit, Vimeo, SoundCloud and many others. yt-dlp notes that platform support can change and must be tested against the live site. citeturn0search7
+Supported platforms depend on the current yt-dlp extractors. Site support can change as platforms change; the reliable compatibility test is attempting extraction.
+
+The server includes yt-dlp's **curl_cffi** support and browser-compatible request handling for sources that reject ordinary HTTP/TLS fingerprints with errors such as HTTP 403.
 
 ## Requirements
 
 - Python 3.10+
-- yt-dlp[default]
+- yt-dlp[default,curl-cffi]
 - FFmpeg + FFprobe
-- A supported JavaScript runtime for full YouTube support; the included Dockerfile installs Deno. yt-dlp lists FFmpeg/FFprobe and yt-dlp-ejs plus a supported JS runtime among its recommended dependencies. citeturn0search1
+- A supported JavaScript runtime for full YouTube support; the included Dockerfile installs Deno.
 
 ## Run locally
 
@@ -36,4 +38,4 @@ Run: `docker run --rm -p 8000:8000 video-downloader`
 
 GitHub Pages can host the frontend but cannot execute the Python/yt-dlp/FFmpeg backend. Deploy the repository as a server/container on a host that can run Docker or Python, then serve Index.html through server.py.
 
-The downloader does not bypass DRM, private accounts, paywalls or login-only content. Use it only for media you are permitted to download.
+The downloader does not bypass DRM, private accounts, paywalls, login-only content or access restrictions. Use it only for media you are permitted to download.
