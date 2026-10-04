@@ -129,15 +129,28 @@ def xhamster_fetch_page(url: str) -> str:
     return response.text
 
 
+def xhamster_title_from_page(url: str) -> str:
+    try:
+        page = html.unescape(xhamster_fetch_page(url))
+        match = re.search(r"<title[^>]*>(.*?)</title>", page, re.I | re.S)
+        if match:
+            title = re.sub(r"\\s+", " ", match.group(1)).strip()
+            if title:
+                return re.sub(r"\\s*[|–-]\\s*xHamster.*$", "", title, flags=re.I).strip() or title
+    except Exception:
+        pass
+    return "XHamster video"
+
+
 def xhamster_public_sources(url: str) -> list[dict]:
     page = html.unescape(xhamster_fetch_page(url)).replace("\\/", "/")
-    raw_urls = re.findall(r'https?://[^"\\\'<>\\s]+', page)
+    raw_urls = re.findall(r"https?://[^\\"'<>\\s]+", page)
 
     sources = []
     seen = set()
 
     for raw in raw_urls:
-        candidate = raw.rstrip("\\'\\\",);")
+        candidate = raw.rstrip("\\'\"",);")
         parsed = urlparse(candidate)
         if not parsed.hostname or not xhamster_media_host(parsed.hostname):
             continue
@@ -295,7 +308,7 @@ def extract(url: str) -> dict:
             sources = xhamster_public_sources(url)
             if sources:
                 return {
-                    "title": "XHamster video",
+                    "title": xhamster_title_from_page(url),
                     "thumbnail": None,
                     "duration": None,
                     "uploader": None,
@@ -383,6 +396,10 @@ def download_media(request: URLRequest, background_tasks: BackgroundTasks) -> Fi
             if source is None:
                 raise HTTPException(status_code=422, detail="That XHamster media source is no longer available. Analyze the URL again.")
             xhamster_download_source(source, request.url, output)
+            if not output.exists() or output.stat().st_size == 0:
+                raise HTTPException(status_code=422, detail="XHamster returned an empty media file.")
+            if output.stat().st_size > MAX_FILE_SIZE:
+                raise HTTPException(status_code=413, detail="The resulting file is larger than the 500 MB limit.")
         except HTTPException:
             cleanup(temp_dir)
             raise
