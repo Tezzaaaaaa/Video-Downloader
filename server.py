@@ -67,6 +67,7 @@ def base_options() -> dict:
     return {
         "quiet": True,
         "extractor_args": {"generic": {"impersonate": "chrome"}},
+        "impersonate": "chrome",
         "no_warnings": True,
         "noplaylist": True,
         "socket_timeout": 20,
