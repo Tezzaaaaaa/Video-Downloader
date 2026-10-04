@@ -66,6 +66,7 @@ def validate_format_id(format_id: str | None) -> str | None:
 def base_options() -> dict:
     return {
         "quiet": True,
+        "extractor_args": {"generic": {"impersonate": "chrome"}},
         "no_warnings": True,
         "noplaylist": True,
         "socket_timeout": 20,
