@@ -1,12 +1,16 @@
+import hashlib
+import html
 import ipaddress
 import os
 import re
 import socket
+import subprocess
 import tempfile
 from pathlib import Path
 from urllib.parse import urlparse
 
 import yt_dlp
+from curl_cffi import requests as curl_requests
 from fastapi import BackgroundTasks, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse
@@ -100,6 +104,119 @@ def is_xhamster_url(url: str) -> bool:
     return hostname == "xhamster.com" or hostname.endswith(".xhamster.com")
 
 
+def xhamster_media_host(hostname: str) -> bool:
+    host = hostname.lower().rstrip(".")
+    return host.endswith(".xhcdn.com") or host == "xhcdn.com" or host.endswith(".xhamster.com")
+
+
+def xhamster_source_id(url: str) -> str:
+    return "xh_" + hashlib.sha256(url.encode("utf-8")).hexdigest()[:20]
+
+
+def xhamster_fetch_page(url: str) -> str:
+    response = curl_requests.get(
+        url,
+        impersonate="chrome",
+        headers={
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/140 Safari/537.36",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.8",
+        },
+        timeout=20,
+        allow_redirects=True,
+    )
+    response.raise_for_status()
+    return response.text
+
+
+def xhamster_public_sources(url: str) -> list[dict]:
+    page = html.unescape(xhamster_fetch_page(url)).replace("\\/", "/")
+    raw_urls = re.findall(r'https?://[^"\\\'<>\\s]+', page)
+
+    sources = []
+    seen = set()
+
+    for raw in raw_urls:
+        candidate = raw.rstrip("\\'\\\",);")
+        parsed = urlparse(candidate)
+        if not parsed.hostname or not xhamster_media_host(parsed.hostname):
+            continue
+
+        lowered = candidate.lower()
+        if ".mp4" not in lowered and ".m3u8" not in lowered:
+            continue
+
+        if candidate in seen:
+            continue
+        seen.add(candidate)
+
+        quality_match = re.search(r'(?<!\\d)(\\d{3,4})p?(?!\\d)', candidate, re.I)
+        height = int(quality_match.group(1)) if quality_match else None
+        is_hls = ".m3u8" in lowered
+        sources.append({
+            "id": xhamster_source_id(candidate),
+            "url": candidate,
+            "type": "hls" if is_hls else "video",
+            "ext": "mp4",
+            "height": height,
+            "fps": None,
+            "hasAudio": True,
+            "size": None,
+        })
+
+    sources.sort(key=lambda item: (-(item["height"] or 0), item["type"] != "video", item["url"]))
+    return sources
+
+
+def xhamster_source_for_id(url: str, source_id: str) -> dict | None:
+    for source in xhamster_public_sources(url):
+        if source["id"] == source_id:
+            return source
+    return None
+
+
+def xhamster_download_source(source: dict, page_url: str, output: Path) -> None:
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/140 Safari/537.36",
+        "Referer": page_url,
+    }
+
+    if source["type"] == "hls":
+        header_text = "".join(f"{key}: {value}\\r\\n" for key, value in headers.items())
+        subprocess.run(
+            [
+                "ffmpeg", "-hide_banner", "-loglevel", "error",
+                "-headers", header_text,
+                "-i", source["url"],
+                "-c", "copy",
+                "-movflags", "+faststart",
+                "-y", str(output),
+            ],
+            check=True,
+            timeout=300,
+        )
+        return
+
+    with curl_requests.get(
+        source["url"],
+        impersonate="chrome",
+        headers=headers,
+        stream=True,
+        timeout=30,
+        allow_redirects=True,
+    ) as response:
+        response.raise_for_status()
+        total = 0
+        with output.open("wb") as handle:
+            for chunk in response.iter_content(chunk_size=1024 * 1024):
+                if not chunk:
+                    continue
+                total += len(chunk)
+                if total > MAX_FILE_SIZE:
+                    raise HTTPException(status_code=413, detail="The resulting file is larger than the 500 MB limit.")
+                handle.write(chunk)
+
+
 def x_url_candidates(url: str) -> list[str]:
     if not is_x_url(url):
         return [url]
@@ -172,6 +289,25 @@ def download_with_fallbacks(url: str, options: dict) -> None:
 
 def extract(url: str) -> dict:
     validate_public_url(url)
+
+    if is_xhamster_url(url):
+        try:
+            sources = xhamster_public_sources(url)
+            if sources:
+                return {
+                    "title": "XHamster video",
+                    "thumbnail": None,
+                    "duration": None,
+                    "uploader": None,
+                    "extractor": "XHamster source extractor",
+                    "formats": [
+                        {key: source[key] for key in ("id", "type", "ext", "height", "fps", "hasAudio", "size")}
+                        for source in sources[:100]
+                    ],
+                }
+        except Exception:
+            pass
+
     try:
         info = extract_info_with_fallbacks(url)
     except Exception as exc:
@@ -238,6 +374,25 @@ def media_info(request: URLRequest) -> dict:
 @app.post("/api/download")
 def download_media(request: URLRequest, background_tasks: BackgroundTasks) -> FileResponse:
     validate_public_url(request.url)
+
+    if is_xhamster_url(request.url) and request.format_id and request.format_id.startswith("xh_"):
+        temp_dir = Path(tempfile.mkdtemp(prefix="video-downloader-xh-"))
+        output = temp_dir / "download.mp4"
+        try:
+            source = xhamster_source_for_id(request.url, request.format_id)
+            if source is None:
+                raise HTTPException(status_code=422, detail="That XHamster media source is no longer available. Analyze the URL again.")
+            xhamster_download_source(source, request.url, output)
+        except HTTPException:
+            cleanup(temp_dir)
+            raise
+        except Exception as exc:
+            cleanup(temp_dir)
+            message = str(exc).strip().splitlines()[-1] if str(exc).strip() else "XHamster download failed."
+            raise HTTPException(status_code=422, detail=message[:500])
+
+        background_tasks.add_task(cleanup, temp_dir)
+        return FileResponse(output, media_type="video/mp4", filename="download.mp4", background=background_tasks)
 
     temp_dir = Path(tempfile.mkdtemp(prefix="video-downloader-"))
     output_template = str(temp_dir / "%(title).120s-%(id)s.%(ext)s")
