@@ -20,6 +20,7 @@ app = FastAPI(title="Video Downloader", version="1.0.0")
 
 class URLRequest(BaseModel):
     url: str
+    format_id: str | None = None
 
     @field_validator("url")
     @classmethod
@@ -52,6 +53,14 @@ def validate_public_url(url: str) -> None:
         ip = ipaddress.ip_address(address)
         if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast:
             raise HTTPException(status_code=400, detail="Private or local network URLs are not allowed.")
+
+
+def validate_format_id(format_id: str | None) -> str | None:
+    if format_id is None:
+        return None
+    if not re.fullmatch(r"[A-Za-z0-9._-]{1,80}", format_id):
+        raise HTTPException(status_code=400, detail="Invalid format.")
+    return format_id
 
 
 def base_options() -> dict:
@@ -143,9 +152,10 @@ def download_media(request: URLRequest, background_tasks: BackgroundTasks) -> Fi
     output_template = str(temp_dir / "%(title).120s-%(id)s.%(ext)s")
 
     options = base_options()
+    format_id = validate_format_id(request.format_id)
     options.update({
         "outtmpl": output_template,
-        "format": "bestvideo*+bestaudio/best",
+        "format": f"{format_id}+bestaudio/{format_id}" if format_id else "bestvideo*+bestaudio/best",
         "merge_output_format": "mp4",
         "restrictfilenames": True,
         "windowsfilenames": True,
@@ -192,9 +202,10 @@ def download_audio(request: URLRequest, background_tasks: BackgroundTasks) -> Fi
     output_template = str(temp_dir / "%(title).120s-%(id)s.%(ext)s")
 
     options = base_options()
+    format_id = validate_format_id(request.format_id)
     options.update({
         "outtmpl": output_template,
-        "format": "bestaudio/best",
+        "format": format_id or "bestaudio/best",
         "restrictfilenames": True,
         "windowsfilenames": True,
         "postprocessors": [{
