@@ -8,6 +8,7 @@ from urllib.parse import urlparse
 
 import yt_dlp
 from fastapi import BackgroundTasks, FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse
 from pydantic import BaseModel, field_validator
 
@@ -16,6 +17,13 @@ INDEX_FILE = BASE_DIR / "Index.html"
 MAX_FILE_SIZE = 500 * 1024 * 1024
 
 app = FastAPI(title="Video Downloader", version="1.0.0")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["https://tezzaaaaaa.github.io"],
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["Content-Type"],
+)
 
 
 class URLRequest(BaseModel):
@@ -77,14 +85,76 @@ def base_options() -> dict:
     }
 
 
+def is_x_url(url: str) -> bool:
+    hostname = (urlparse(url).hostname or "").lower().rstrip(".")
+    return hostname in {
+        "x.com",
+        "www.x.com",
+        "mobile.x.com",
+        "twitter.com",
+        "www.twitter.com",
+        "mobile.twitter.com",
+    }
+
+
+def x_url_candidates(url: str) -> list[str]:
+    if not is_x_url(url):
+        return [url]
+
+    parsed = urlparse(url)
+    path = parsed.path
+    query = parsed.query
+    canonical_query = f"?{query}" if query else ""
+    return [
+        f"https://x.com{path}{canonical_query}",
+        f"https://twitter.com{path}{canonical_query}",
+    ]
+
+
+def extraction_options(url: str, api: str | None = None) -> dict:
+    options = base_options()
+    if is_x_url(url):
+        options["extractor_args"] = {
+            **options["extractor_args"],
+            "twitter": {"api": api or "graphql"},
+        }
+        options.pop("impersonate", None)
+    return options
+
+
+def extract_info_with_fallbacks(url: str, options: dict) -> dict:
+    candidates = x_url_candidates(url)
+    apis = ["graphql", "syndication", "legacy"] if is_x_url(url) else [None]
+    last_error: Exception | None = None
+
+    for candidate in candidates:
+        for api in apis:
+            attempt = dict(options)
+            if is_x_url(candidate):
+                attempt["extractor_args"] = {
+                    **attempt.get("extractor_args", {}),
+                    "twitter": {"api": api},
+                }
+                attempt.pop("impersonate", None)
+
+            try:
+                with yt_dlp.YoutubeDL(attempt) as ydl:
+                    return ydl.extract_info(candidate, download=False)
+            except Exception as exc:
+                last_error = exc
+
+    if last_error is not None:
+        raise last_error
+    raise RuntimeError("Unable to extract media.")
+
+
 def extract(url: str) -> dict:
     validate_public_url(url)
-    options = base_options()
+    options = extraction_options(url)
     options["skip_download"] = True
 
     try:
-        with yt_dlp.YoutubeDL(options) as ydl:
-            info = ydl.extract_info(url, download=False)
+        info = extract_info_with_fallbacks(url, options)
     except Exception as exc:
         message = str(exc).strip().splitlines()[-1] if str(exc).strip() else "Unable to read this media URL."
         raise HTTPException(status_code=422, detail=message[:500])
@@ -153,7 +223,7 @@ def download_media(request: URLRequest, background_tasks: BackgroundTasks) -> Fi
     temp_dir = Path(tempfile.mkdtemp(prefix="video-downloader-"))
     output_template = str(temp_dir / "%(title).120s-%(id)s.%(ext)s")
 
-    options = base_options()
+    options = extraction_options(request.url)
     format_id = validate_format_id(request.format_id)
     options.update({
         "outtmpl": output_template,
@@ -165,8 +235,32 @@ def download_media(request: URLRequest, background_tasks: BackgroundTasks) -> Fi
     })
 
     try:
-        with yt_dlp.YoutubeDL(options) as ydl:
-            ydl.download([request.url])
+        candidates = x_url_candidates(request.url)
+        apis = ["graphql", "syndication", "legacy"] if is_x_url(request.url) else [None]
+        downloaded = False
+        last_error = None
+
+        for candidate in candidates:
+            for api in apis:
+                attempt = dict(options)
+                if is_x_url(candidate):
+                    attempt["extractor_args"] = {
+                        **attempt.get("extractor_args", {}),
+                        "twitter": {"api": api},
+                    }
+                    attempt.pop("impersonate", None)
+                try:
+                    with yt_dlp.YoutubeDL(attempt) as ydl:
+                        ydl.download([candidate])
+                    downloaded = True
+                    break
+                except Exception as exc:
+                    last_error = exc
+            if downloaded:
+                break
+
+        if not downloaded and last_error is not None:
+            raise last_error
     except Exception as exc:
         for child in temp_dir.iterdir():
             child.unlink(missing_ok=True)
@@ -203,7 +297,7 @@ def download_audio(request: URLRequest, background_tasks: BackgroundTasks) -> Fi
     temp_dir = Path(tempfile.mkdtemp(prefix="video-downloader-audio-"))
     output_template = str(temp_dir / "%(title).120s-%(id)s.%(ext)s")
 
-    options = base_options()
+    options = extraction_options(request.url)
     format_id = validate_format_id(request.format_id)
     options.update({
         "outtmpl": output_template,
@@ -218,8 +312,32 @@ def download_audio(request: URLRequest, background_tasks: BackgroundTasks) -> Fi
     })
 
     try:
-        with yt_dlp.YoutubeDL(options) as ydl:
-            ydl.download([request.url])
+        candidates = x_url_candidates(request.url)
+        apis = ["graphql", "syndication", "legacy"] if is_x_url(request.url) else [None]
+        downloaded = False
+        last_error = None
+
+        for candidate in candidates:
+            for api in apis:
+                attempt = dict(options)
+                if is_x_url(candidate):
+                    attempt["extractor_args"] = {
+                        **attempt.get("extractor_args", {}),
+                        "twitter": {"api": api},
+                    }
+                    attempt.pop("impersonate", None)
+                try:
+                    with yt_dlp.YoutubeDL(attempt) as ydl:
+                        ydl.download([candidate])
+                    downloaded = True
+                    break
+                except Exception as exc:
+                    last_error = exc
+            if downloaded:
+                break
+
+        if not downloaded and last_error is not None:
+            raise last_error
     except Exception as exc:
         for child in temp_dir.iterdir():
             child.unlink(missing_ok=True)
