@@ -51,3 +51,13 @@ The GitHub Pages URL is the public frontend. GitHub Pages cannot execute Python,
 - MP3: `POST /api/audio`
 
 The backend is responsible for yt-dlp extraction and FFmpeg processing. The frontend must not be expected to run those components from GitHub Pages.
+
+## X / Twitter and XHamster
+
+The backend has site-specific extraction fallbacks for X / Twitter and XHamster:
+
+- X / Twitter URLs are normalized across `x.com`, `twitter.com` and mobile variants, then tried through yt-dlp's supported GraphQL, syndication and legacy APIs, with an IPv4 retry for network-level 403 failures.
+- XHamster extraction retries the normal request, IPv4, browser impersonation and IPv4 + browser impersonation paths when supported by the installed yt-dlp networking dependencies.
+- The repository uses a pre-release yt-dlp build so fresh deployments receive current extractor fixes.
+
+These fallbacks do not bypass private/protected accounts, login requirements, DRM, paywalls or age/region restrictions. yt-dlp documents that X and XHamster can return authentication, anti-bot, geo or age-verification failures even on current builds. citeturn1search0turn0search2turn0search5
