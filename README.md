@@ -41,16 +41,16 @@ GitHub Pages can host the frontend but cannot execute the Python/yt-dlp/FFmpeg b
 The downloader does not bypass DRM, private accounts, paywalls, login-only content or access restrictions. Use it only for media you are permitted to download.
 ## Live architecture
 
-The GitHub Pages URL is the public frontend. GitHub Pages cannot execute Python, yt-dlp or FFmpeg, so the frontend is configured to call the deployed FastAPI backend instead.
+Render runs the complete application as one Docker web service. The same FastAPI server serves the frontend and the yt-dlp/FFmpeg backend, so the frontend uses same-origin API requests and has no Replit dependency.
 
-- Frontend: https://tezzaaaaaa.github.io/Video-Downloader/
-- Backend: https://yellowish-pointless-snake--tereroaafamasag.replit.app
-- Backend health check: `/health`
+- Render service: `video-downloader`
+- Health check: `/health`
 - Metadata: `POST /api/info`
 - Video: `POST /api/download`
 - MP3: `POST /api/audio`
 
-The backend is responsible for yt-dlp extraction and FFmpeg processing. The frontend must not be expected to run those components from GitHub Pages.
+The included `render.yaml` and `Dockerfile` are the deployment configuration. Connect this GitHub repository to Render and deploy it as a Docker Web Service.
+
 
 ## X / Twitter and XHamster
 
