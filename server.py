@@ -514,7 +514,26 @@ def media_info(request: URLRequest) -> dict:
 def download_media(request: URLRequest, background_tasks: BackgroundTasks) -> FileResponse:
     validate_public_url(request.url)
 
-    if is_xhamster_url(request.url) and request.format_id and request.format_id.startswith("xh_"):
+    if is_xhamster_url(request.url):
+        # Use the same public source list shown by /api/info. The default
+        # Download video action must work even when the user does not select
+        # an individual quality button.
+        try:
+            sources = xhamster_public_sources(request.url)
+            if request.format_id and request.format_id.startswith("xh_"):
+                source = next((item for item in sources if item["id"] == request.format_id), None)
+            else:
+                source = next((item for item in sources if item["type"] == "video"), None)
+                if source is None and sources:
+                    source = sources[0]
+            if source is None:
+                raise HTTPException(status_code=422, detail="No public XHamster video stream was found. The video may require access verification or may not expose a downloadable source.")
+        except HTTPException:
+            raise
+        except Exception as exc:
+            message = str(exc).strip().splitlines()[-1] if str(exc).strip() else "Unable to read the XHamster video source."
+            raise HTTPException(status_code=422, detail=message[:500])
+
         update_download_progress(
             request.download_id,
             stage="starting",
@@ -528,9 +547,6 @@ def download_media(request: URLRequest, background_tasks: BackgroundTasks) -> Fi
         temp_dir = Path(tempfile.mkdtemp(prefix="video-downloader-xh-"))
         output = temp_dir / "download.mp4"
         try:
-            source = xhamster_source_for_id(request.url, request.format_id)
-            if source is None:
-                raise HTTPException(status_code=422, detail="That XHamster media source is no longer available. Analyze the URL again.")
             xhamster_download_source(source, request.url, output, request.download_id)
             if not output.exists() or output.stat().st_size == 0:
                 raise HTTPException(status_code=422, detail="XHamster returned an empty media file.")
