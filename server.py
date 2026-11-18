@@ -627,7 +627,7 @@ def download_x_profile_archive(request: XProfileRequest, background_tasks: Backg
                     subprocess.run(
                         [
                             "ffmpeg", "-hide_banner", "-loglevel", "error",
-                            "-headers", "Referer: https://x.com/\\r\\n",
+                            "-headers", "Referer: https://x.com/\r\n",
                             "-i", media_url, "-c", "copy", "-movflags", "+faststart",
                             "-y", str(output),
                         ],
