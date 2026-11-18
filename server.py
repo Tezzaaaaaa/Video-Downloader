@@ -548,7 +548,7 @@ def download_progress(download_id: str) -> dict:
 def x_profile_video_urls(profile_url: str, limit: int) -> list[str]:
     command = [
         "gallery-dl", "--no-input", "--quiet", "--no-colors", "--get-urls",
-        "--post-range", f"1-{limit}",\n        "--range", f"1-{limit}",
+        "--range", f"1-{limit}",
         "--filter", "extension in ('mp4', 'm3u8')",
         "-o", "extractor.twitter.include=media",
         "-o", "extractor.twitter.videos=true",
