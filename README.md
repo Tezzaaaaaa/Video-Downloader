@@ -114,7 +114,8 @@ Keep `wrangler.jsonc` and `Dockerfile` in the configured build root. Verify the 
 - Health check: `GET /health`
 - Metadata: `POST /api/info`
 - Video: `POST /api/download`
-- MP3 audio: `POST /api/audio`\n- X profile ZIP: `POST /api/x-profile/download` (JSON: `url`, optional `limit` up to 200, optional `download_id`)
+- MP3 audio: `POST /api/audio`
+- X profile ZIP: `POST /api/x-profile/download` (JSON: `url`, optional `limit` up to 200, optional `download_id`)
 
 A successful GitHub Pages deployment alone does **not** mean the download backend is running. The Cloudflare Worker URL is the full-stack deployment endpoint once deployed; the GitHub Pages URL remains a static frontend and cannot execute the backend itself.
 
