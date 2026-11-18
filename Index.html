@@ -602,6 +602,26 @@ footer a:hover{color:var(--accent)}
       </form>
     </section>
 
+    <section class="dock" style="margin-top:22px">
+      <form class="dock-form" id="xProfileForm">
+        <div class="field">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="9"/><path d="M8 12h8M12 8v8"/>
+          </svg>
+          <input id="xProfileUrl" type="url" inputmode="url" autocomplete="off"
+                 autocapitalize="none" spellcheck="false"
+                 placeholder="Paste an X profile URL (e.g. x.com/username)" required>
+        </div>
+        <input id="xProfileLimit" type="number" min="1" max="200" value="100"
+               aria-label="Maximum number of videos"
+               style="width:92px;min-width:72px;border:0;border-radius:16px;background:var(--surface);box-shadow:var(--nm-in);padding:0 12px">
+        <button class="cta" id="xProfileDownload" type="submit">Download X videos</button>
+      </form>
+      <p style="margin:12px 10px 4px;color:var(--text-mute);font-size:12px;line-height:1.5">
+        Downloads up to 200 public videos from an X profile into one ZIP file. Login-restricted posts are not bypassed.
+      </p>
+    </section>
+
     <div id="status" class="status" aria-live="polite"></div>
 
     <section id="downloadProgress" class="download-progress" aria-live="polite" aria-label="Download progress">
@@ -1058,6 +1078,60 @@ footer a:hover{color:var(--accent)}
     } catch(e){}
     return null;
   }
+
+  const xProfileForm = $("xProfileForm");
+  const xProfileUrl = $("xProfileUrl");
+  const xProfileLimit = $("xProfileLimit");
+  const xProfileDownload = $("xProfileDownload");
+
+  xProfileForm.addEventListener("submit", async function(e){
+    e.preventDefault();
+    const profileUrl = xProfileUrl.value.trim();
+    const limit = Math.max(1, Math.min(200, Number.parseInt(xProfileLimit.value, 10) || 100));
+    if(!profileUrl){ setStatus("Paste an X profile URL first.", "error"); return; }
+
+    xProfileDownload.disabled = true;
+    activeDownloadId = (crypto.randomUUID ? crypto.randomUUID() : "xdl_" + Date.now());
+    const downloadId = activeDownloadId;
+    showProgress();
+    setStatus("Scanning X profile…");
+    watchDownloadProgress(downloadId);
+
+    try{
+      const res = await fetch(API_BASE + "/api/x-profile/download", {
+        method:"POST",
+        headers:{"Content-Type":"application/json","Accept":"application/zip, application/json"},
+        body:JSON.stringify({url:profileUrl,limit,download_id:downloadId})
+      });
+      const contentType = (res.headers.get("Content-Type") || "").toLowerCase();
+      if(!res.ok){
+        let message = "X profile download failed.";
+        try { const data = await res.json(); message = data.detail || data.error || message; } catch(e){}
+        throw new Error(message);
+      }
+      if(!contentType.includes("application/zip")) throw new Error("The server did not return a ZIP archive.");
+      const blob = await readResponseWithProgress(res, downloadId);
+      if(!blob.size) throw new Error("The ZIP archive is empty.");
+      const href = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = href;
+      a.download = "x-profile-videos.zip";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(href), 30000);
+      setStatus("X profile archive ready.", "success");
+    } catch(err){
+      progressMessage.textContent = "Profile download failed";
+      progressPercent.textContent = "—";
+      progressEta.textContent = err.message || "X profile download failed.";
+      progressSpeed.textContent = "";
+      setStatus(err.message || "X profile download failed.", "error");
+    } finally {
+      activeDownloadId = null;
+      xProfileDownload.disabled = false;
+    }
+  });
 
   videoBtn.onclick = () => download("/api/download");
   audioBtn.onclick = () => download("/api/audio");
