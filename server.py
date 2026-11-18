@@ -548,7 +548,7 @@ def download_progress(download_id: str) -> dict:
 def x_profile_video_urls(profile_url: str, limit: int) -> list[str]:
     command = [
         "gallery-dl", "--no-input", "--quiet", "--no-colors", "--get-urls",
-        "--range", f"1-{limit}",
+        "--post-range", f"1-{limit}",\n        "--range", f"1-{limit}",
         "--filter", "extension in ('mp4', 'm3u8')",
         "-o", "extractor.twitter.include=media",
         "-o", "extractor.twitter.videos=true",
@@ -617,12 +617,13 @@ def download_x_profile_archive(request: XProfileRequest, background_tasks: Backg
         with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=1) as bundle:
             for index, media_url in enumerate(urls, start=1):
                 parsed = urlparse(media_url)
-                suffix = ".mp4" if parsed.path.lower().endswith(".m3u8") else Path(parsed.path).suffix.lower()
-                if suffix not in {".mp4", ".m3u8"}:
+                is_hls = parsed.path.lower().endswith(".m3u8")
+                suffix = ".mp4" if is_hls else Path(parsed.path).suffix.lower()
+                if suffix != ".mp4":
                     suffix = ".mp4"
                 output = temp_dir / f"video-{index:03d}.mp4"
 
-                if suffix == ".m3u8":
+                if is_hls:
                     subprocess.run(
                         [
                             "ffmpeg", "-hide_banner", "-loglevel", "error",
