@@ -7,6 +7,7 @@ import socket
 import subprocess
 import tempfile
 import time
+import zipfile
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -67,6 +68,45 @@ app.add_middleware(
     allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["Content-Type"],
 )
+
+
+class XProfileRequest(BaseModel):
+    url: str
+    limit: int = 100
+    download_id: str | None = None
+
+    @field_validator("download_id")
+    @classmethod
+    def validate_profile_download_id(cls, value: str | None) -> str | None:
+        if value is not None and not re.fullmatch(r"[A-Za-z0-9_-]{1,80}", value):
+            raise ValueError("Invalid download progress ID.")
+        return value
+
+    @field_validator("limit")
+    @classmethod
+    def validate_profile_limit(cls, value: int) -> int:
+        if not 1 <= value <= 200:
+            raise ValueError("Choose between 1 and 200 videos.")
+        return value
+
+    @field_validator("url")
+    @classmethod
+    def validate_profile_url(cls, value: str) -> str:
+        value = value.strip()
+        parsed = urlparse(value)
+        hostname = (parsed.hostname or "").lower().rstrip(".")
+        if parsed.scheme not in {"http", "https"} or hostname not in {
+            "x.com", "www.x.com", "mobile.x.com",
+            "twitter.com", "www.twitter.com", "mobile.twitter.com",
+        }:
+            raise ValueError("Enter an X profile URL.")
+        parts = [part for part in parsed.path.split("/") if part]
+        if parts and parts[-1].lower() in {"media", "videos"}:
+            parts.pop()
+        if len(parts) != 1 or not re.fullmatch(r"@?[A-Za-z0-9_]{1,15}", parts[0]):
+            raise ValueError("Enter a profile URL, not an individual post.")
+        username = parts[0].lstrip("@")
+        return f"https://x.com/{username}/media"
 
 
 class URLRequest(BaseModel):
@@ -503,6 +543,171 @@ def download_progress(download_id: str) -> dict:
         "percent": 0,
         "message": "Preparing download…",
     })
+
+
+def x_profile_video_urls(profile_url: str, limit: int) -> list[str]:
+    command = [
+        "gallery-dl", "--no-input", "--quiet", "--no-colors", "--get-urls",
+        "--post-range", f"1-{limit}",\n        "--range", f"1-{limit}",
+        "--filter", "extension in ('mp4', 'm3u8')",
+        "-o", "extractor.twitter.include=media",
+        "-o", "extractor.twitter.videos=true",
+    ]
+    cookies_file = os.environ.get("YTDLP_COOKIES_FILE", "").strip()
+    if cookies_file:
+        cookie_path = Path(cookies_file)
+        if not cookie_path.is_file():
+            raise RuntimeError("The configured X cookies file does not exist or is not readable.")
+        command.extend(["--cookies", str(cookie_path)])
+    command.append(profile_url)
+
+    result = subprocess.run(
+        command,
+        capture_output=True,
+        text=True,
+        timeout=180,
+        check=False,
+    )
+    if result.returncode != 0 and not result.stdout.strip():
+        message = result.stderr.strip().splitlines()[-1] if result.stderr.strip() else "X profile extraction failed."
+        raise RuntimeError(message[:500])
+
+    urls = []
+    seen = set()
+    for line in result.stdout.splitlines():
+        candidate = line.strip()
+        parsed = urlparse(candidate)
+        host = (parsed.hostname or "").lower().rstrip(".")
+        if parsed.scheme not in {"http", "https"} or host not in {"video.twimg.com", "video-cf.twimg.com"}:
+            continue
+        if not re.search(r"\.(?:mp4|m3u8)(?:$|\?)", parsed.path, re.I):
+            continue
+        if candidate not in seen:
+            seen.add(candidate)
+            urls.append(candidate)
+        if len(urls) >= limit:
+            break
+    return urls
+
+
+def download_x_profile_archive(request: XProfileRequest, background_tasks: BackgroundTasks) -> FileResponse:
+    validate_public_url(request.url)
+    update_download_progress(
+        request.download_id,
+        stage="scanning",
+        percent=0,
+        downloaded_bytes=0,
+        total_bytes=None,
+        speed=None,
+        eta=None,
+        message="Finding videos on the X profile…",
+    )
+    temp_dir = Path(tempfile.mkdtemp(prefix="video-downloader-x-profile-"))
+    archive = temp_dir / "x-profile-videos.zip"
+    try:
+        urls = x_profile_video_urls(request.url, request.limit)
+        if not urls:
+            raise HTTPException(
+                status_code=422,
+                detail="No downloadable public videos were found. The profile may require login, or X may be blocking access.",
+            )
+
+        total_bytes = 0
+        completed = 0
+        with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=1) as bundle:
+            for index, media_url in enumerate(urls, start=1):
+                parsed = urlparse(media_url)
+                is_hls = parsed.path.lower().endswith(".m3u8")
+                suffix = ".mp4" if is_hls else Path(parsed.path).suffix.lower()
+                if suffix != ".mp4":
+                    suffix = ".mp4"
+                output = temp_dir / f"video-{index:03d}.mp4"
+
+                if is_hls:
+                    subprocess.run(
+                        [
+                            "ffmpeg", "-hide_banner", "-loglevel", "error",
+                            "-headers", "Referer: https://x.com/\r\n",
+                            "-i", media_url, "-c", "copy", "-movflags", "+faststart",
+                            "-y", str(output),
+                        ],
+                        check=True,
+                        timeout=300,
+                        capture_output=True,
+                        text=True,
+                    )
+                else:
+                    response = curl_requests.get(
+                        media_url,
+                        impersonate="chrome",
+                        headers={"Referer": "https://x.com/", "User-Agent": "Mozilla/5.0"},
+                        stream=True,
+                        timeout=30,
+                        allow_redirects=True,
+                    )
+                    try:
+                        response.raise_for_status()
+                        with output.open("wb") as handle:
+                            for chunk in response.iter_content(chunk_size=1024 * 1024):
+                                if not chunk:
+                                    continue
+                                total_bytes += len(chunk)
+                                if total_bytes > MAX_FILE_SIZE:
+                                    raise HTTPException(status_code=413, detail="The profile archive exceeds the 2 GB limit.")
+                                handle.write(chunk)
+                    finally:
+                        response.close()
+
+                if not output.is_file() or output.stat().st_size == 0:
+                    output.unlink(missing_ok=True)
+                    continue
+                total_bytes += output.stat().st_size if suffix == ".m3u8" else 0
+                if total_bytes > MAX_FILE_SIZE:
+                    raise HTTPException(status_code=413, detail="The profile archive exceeds the 2 GB limit.")
+                bundle.write(output, arcname=output.name)
+                output.unlink(missing_ok=True)
+                completed += 1
+                update_download_progress(
+                    request.download_id,
+                    stage="downloading",
+                    percent=round(completed * 100 / len(urls), 1),
+                    downloaded_bytes=completed,
+                    total_bytes=len(urls),
+                    speed=None,
+                    eta=None,
+                    message=f"Downloaded {completed} of {len(urls)} videos…",
+                )
+
+        if completed == 0 or not archive.exists() or archive.stat().st_size == 0:
+            raise HTTPException(status_code=422, detail="X returned no downloadable video files.")
+        update_download_progress(
+            request.download_id,
+            stage="ready",
+            percent=100,
+            speed=None,
+            eta=0,
+            message=f"{completed} videos ready; sending ZIP archive…",
+        )
+    except HTTPException:
+        cleanup(temp_dir)
+        raise
+    except Exception as exc:
+        cleanup(temp_dir)
+        message = str(exc).strip().splitlines()[-1] if str(exc).strip() else "X profile download failed."
+        raise HTTPException(status_code=422, detail=message[:500])
+
+    background_tasks.add_task(cleanup, temp_dir)
+    return FileResponse(
+        archive,
+        media_type="application/zip",
+        filename="x-profile-videos.zip",
+        background=background_tasks,
+    )
+
+
+@app.post("/api/x-profile/download")
+def download_x_profile(request: XProfileRequest, background_tasks: BackgroundTasks) -> FileResponse:
+    return download_x_profile_archive(request, background_tasks)
 
 
 @app.post("/api/info")

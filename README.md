@@ -23,13 +23,13 @@ Supported websites depend on the installed yt-dlp extractors and can change as w
 - Video downloads and MP3 audio extraction
 - yt-dlp with FFmpeg/FFprobe post-processing
 - Browser-compatible request handling, including optional `curl_cffi` support
-- Site-specific retry paths for X/Twitter and XHamster when supported by the installed dependencies
+- X profile video downloads bundled into a ZIP archive (up to 200 videos per request)\n- Site-specific retry paths for individual X/Twitter posts and XHamster when supported by the installed dependencies
 - Health-check and API endpoints for deployment monitoring
 
 ## Requirements
 
 - Python 3.10 or newer
-- `yt-dlp[default,curl-cffi]`
+- `yt-dlp[default,curl-cffi]`\n- `gallery-dl` (X profile media discovery)
 - FFmpeg and FFprobe
 - A supported JavaScript runtime for full YouTube support; the included Dockerfile installs Deno
 
@@ -114,7 +114,7 @@ Keep `wrangler.jsonc` and `Dockerfile` in the configured build root. Verify the 
 - Health check: `GET /health`
 - Metadata: `POST /api/info`
 - Video: `POST /api/download`
-- MP3 audio: `POST /api/audio`
+- MP3 audio: `POST /api/audio`\n- X profile ZIP: `POST /api/x-profile/download` (JSON: `url`, optional `limit` up to 200, optional `download_id`)
 
 A successful GitHub Pages deployment alone does **not** mean the download backend is running. The Cloudflare Worker URL is the full-stack deployment endpoint once deployed; the GitHub Pages URL remains a static frontend and cannot execute the backend itself.
 
