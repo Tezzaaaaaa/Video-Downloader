@@ -139,7 +139,7 @@ footer .fl{display:flex;gap:16px}
 footer a{color:var(--muted-foreground);transition:color .15s}
 footer a:hover{color:var(--foreground)}
 
-#xProfileLimit{width:92px;min-width:72px;height:42px;padding:0 10px;border:1px solid var(--input)!important;border-radius:var(--radius)!important;background:var(--background)!important;box-shadow:none!important;outline:0}
+.x-profile-limit{width:92px;min-width:72px;height:42px;padding:0 10px;border:1px solid var(--input);border-radius:var(--radius);background:var(--background);outline:0}\n.x-profile-note{margin:12px 10px 4px;color:var(--muted-foreground);font-size:12px;line-height:1.5}
 #xProfileLimit:focus-visible,button:focus-visible,a:focus-visible{outline:2px solid var(--ring);outline-offset:2px}
 button:disabled{pointer-events:none}
 ::selection{background:hsl(240 4.9% 83.9% / .25);color:var(--foreground)}
@@ -219,10 +219,10 @@ button:disabled{pointer-events:none}
         </div>
         <input id="xProfileLimit" type="number" min="1" max="200" value="100"
                aria-label="Maximum number of videos"
-               style="width:92px;min-width:72px;border:0;border-radius:16px;background:var(--surface);box-shadow:var(--nm-in);padding:0 12px">
+               class="x-profile-limit">
         <button class="cta" id="xProfileDownload" type="submit">Download X videos</button>
       </form>
-      <p style="margin:12px 10px 4px;color:var(--text-mute);font-size:12px;line-height:1.5">
+      <p class="x-profile-note">
         Downloads up to 200 public videos from an X profile into one ZIP file. Login-restricted posts are not bypassed.
       </p>
     </section>
